@@ -57,7 +57,7 @@ model = Sequential([
 model.compile(optimizer=Adam(learning_rate=0.001), loss='mean_squared_error')
 
 # Train the model with validation split
-history = model.fit(X_train, y_train, epochs=5, batch_size=64, validation_split=0.2)
+history = model.fit(X_train, y_train, epochs=50, batch_size=64, validation_split=0.2)
 
 # Fetch test data
 test_start_date = "2024-01-01"
@@ -94,7 +94,7 @@ plt.title("Model Loss Over Epochs")
 plt.xlabel("Epochs")
 plt.ylabel("Loss")
 plt.legend()
-plt.show()
+plt.savefig("plots/loss_plot.png")  # Save loss plot
 
 # Plot predictions vs. true prices
 plt.figure(figsize=(14, 7))
@@ -104,7 +104,4 @@ plt.title(f"{ticker} Stock Price Prediction")
 plt.xlabel("Date")
 plt.ylabel("Stock Price")
 plt.legend()
-plt.show()
-
-plt.savefig("plots/loss_plot.png")  # Save loss plot
 plt.savefig("plots/prediction_plot.png")  # Save prediction plot
