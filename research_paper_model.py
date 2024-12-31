@@ -3,9 +3,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import ta  # For technical indicators
 import yfinance as yf
-from keras.layers import Input, LSTM, Dense, Dropout
-from keras.models import Sequential
-from keras.optimizers import Adam
+from tensorflow.keras.layers import Input, LSTM, Dense, Dropout
+from tensorflow.keras import Sequential
+from tensorflow.keras.optimizers import Adam
 from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.preprocessing import MinMaxScaler
 

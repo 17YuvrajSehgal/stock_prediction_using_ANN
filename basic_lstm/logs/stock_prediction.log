@@ -1,0 +1,17 @@
+2024-12-31 17:43:13,888 - INFO - Fetching data for ^GSPC from 2015-01-01 to 2023-12-31
+2024-12-31 17:43:14,792 - INFO - Creating time-series dataset...
+2024-12-31 17:43:14,794 - INFO - Time-series dataset created successfully.
+2024-12-31 17:43:14,795 - INFO - Building the LSTM model...
+2024-12-31 17:43:14,880 - INFO - Model built successfully.
+2024-12-31 17:43:14,886 - INFO - Starting model training...
+2024-12-31 17:44:13,431 - INFO - Model training completed.
+2024-12-31 17:44:13,431 - INFO - Fetching data for ^GSPC from 2024-01-01 to 2024-12-31
+2024-12-31 17:44:13,518 - INFO - Creating time-series dataset...
+2024-12-31 17:44:13,523 - INFO - Time-series dataset created successfully.
+2024-12-31 17:44:13,523 - INFO - Starting predictions...
+2024-12-31 17:44:14,179 - INFO - Predictions completed.
+2024-12-31 17:44:14,180 - INFO - Mean Squared Error: 15005.776603633476
+2024-12-31 17:44:14,180 - INFO - Root Mean Squared Error: 122.49806775469348
+2024-12-31 17:44:14,180 - INFO - R^2 Score: 0.832303442959892
+2024-12-31 17:44:14,428 - INFO - Training and validation loss plot saved.
+2024-12-31 17:44:14,602 - INFO - Prediction plot saved successfully.
