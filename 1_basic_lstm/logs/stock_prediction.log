@@ -15,3 +15,20 @@
 2024-12-31 17:44:14,180 - INFO - R^2 Score: 0.832303442959892
 2024-12-31 17:44:14,428 - INFO - Training and validation loss plot saved.
 2024-12-31 17:44:14,602 - INFO - Prediction plot saved successfully.
+2025-01-04 20:30:55,806 - INFO - Fetching data for ^GSPC from 2015-01-01 to 2023-12-31
+2025-01-04 20:30:56,361 - INFO - Creating time-series dataset...
+2025-01-04 20:30:56,363 - INFO - Time-series dataset created successfully.
+2025-01-04 20:30:56,364 - INFO - Building the LSTM model...
+2025-01-04 20:30:56,451 - INFO - Model built successfully.
+2025-01-04 20:30:56,457 - INFO - Starting model training...
+2025-01-04 20:32:03,548 - INFO - Model training completed.
+2025-01-04 20:32:03,548 - INFO - Fetching data for ^GSPC from 2020-01-01 to 2025-01-04
+2025-01-04 20:32:03,687 - INFO - Creating time-series dataset...
+2025-01-04 20:32:03,688 - INFO - Time-series dataset created successfully.
+2025-01-04 20:32:03,688 - INFO - Starting predictions...
+2025-01-04 20:32:04,544 - INFO - Predictions completed.
+2025-01-04 20:32:04,550 - INFO - Mean Squared Error: 9780.746626551296
+2025-01-04 20:32:04,550 - INFO - Root Mean Squared Error: 98.89765733601224
+2025-01-04 20:32:04,550 - INFO - R^2 Score: 0.9818675763743199
+2025-01-04 20:32:04,766 - INFO - Training and validation loss plot saved.
+2025-01-04 20:32:04,931 - INFO - Prediction plot saved successfully.

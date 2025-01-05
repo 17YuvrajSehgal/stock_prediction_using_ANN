@@ -63,8 +63,8 @@ def create_dataset(dataset, look_back=60):
 
 # Fetch data for training
 ticker = "^GSPC"
-start_date = "2015-01-01"
-end_date = "2023-12-31"
+start_date = "2020-01-01"
+end_date = "2025-01-04"
 data = fetch_data(ticker, start_date, end_date)
 
 # Add technical indicators

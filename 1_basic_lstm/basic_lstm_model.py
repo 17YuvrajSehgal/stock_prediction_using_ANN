@@ -85,8 +85,8 @@ history = model.fit(X_train, y_train, epochs=50, batch_size=64, validation_split
 log_and_print("Model training completed.")
 
 # Fetch test data
-test_start_date = "2024-01-01"
-test_end_date = "2024-12-31"
+test_start_date = "2020-01-01"
+test_end_date = "2025-01-04"
 test_data = fetch_data(ticker, test_start_date, test_end_date)
 
 scaled_test_data = scaler.transform(test_data[['Close']].values)
