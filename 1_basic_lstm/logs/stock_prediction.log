@@ -32,3 +32,45 @@
 2025-01-04 20:32:04,550 - INFO - R^2 Score: 0.9818675763743199
 2025-01-04 20:32:04,766 - INFO - Training and validation loss plot saved.
 2025-01-04 20:32:04,931 - INFO - Prediction plot saved successfully.
+2025-01-04 20:40:50,478 - INFO - Fetching data for ^GSPC from 2015-01-01 to 2023-12-31
+2025-01-04 20:40:51,520 - INFO - Creating time-series dataset...
+2025-01-04 20:40:51,521 - INFO - Time-series dataset created successfully.
+2025-01-04 20:40:51,521 - INFO - Building the LSTM model...
+2025-01-04 20:40:51,604 - INFO - Model built successfully.
+2025-01-04 20:40:51,609 - INFO - Starting model training...
+2025-01-04 20:41:55,997 - INFO - Model training completed.
+2025-01-04 20:41:55,997 - INFO - Fetching data for ^GSPC from 2020-01-01 to 2025-01-04
+2025-01-04 20:41:56,132 - INFO - Creating time-series dataset...
+2025-01-04 20:41:56,132 - INFO - Time-series dataset created successfully.
+2025-01-04 20:41:56,133 - INFO - Starting predictions...
+2025-01-04 20:41:56,901 - INFO - Predictions completed.
+2025-01-04 20:41:56,907 - INFO - Mean Squared Error: 5666.769067900493
+2025-01-04 20:41:56,907 - INFO - Root Mean Squared Error: 75.27794542826267
+2025-01-04 20:41:56,907 - INFO - R^2 Score: 0.9894944362377064
+2025-01-04 20:41:56,907 - INFO - Mean Absolute Error: 57.38155616333924
+2025-01-04 20:41:56,907 - INFO - Explained Variance Score: 0.9894951070549192
+2025-01-04 20:41:56,907 - INFO - Directional Accuracy: 51.84%
+2025-01-04 20:43:10,925 - INFO - Fetching data for ^GSPC from 2015-01-01 to 2023-12-31
+2025-01-04 20:43:11,427 - INFO - Creating time-series dataset...
+2025-01-04 20:43:11,428 - INFO - Time-series dataset created successfully.
+2025-01-04 20:43:11,429 - INFO - Building the LSTM model...
+2025-01-04 20:43:11,510 - INFO - Model built successfully.
+2025-01-04 20:43:11,516 - INFO - Starting model training...
+2025-01-04 20:44:15,004 - INFO - Model training completed.
+2025-01-04 20:44:15,005 - INFO - Fetching data for ^GSPC from 2020-01-01 to 2025-01-04
+2025-01-04 20:44:15,125 - INFO - Creating time-series dataset...
+2025-01-04 20:44:15,126 - INFO - Time-series dataset created successfully.
+2025-01-04 20:44:15,126 - INFO - Starting predictions...
+2025-01-04 20:44:15,897 - INFO - Predictions completed.
+2025-01-04 20:44:15,899 - INFO - Mean Squared Error: 6826.390832555105
+2025-01-04 20:44:15,899 - INFO - Root Mean Squared Error: 82.62197548204173
+2025-01-04 20:44:15,899 - INFO - R^2 Score: 0.9873446256061544
+2025-01-04 20:44:15,899 - INFO - Mean Absolute Error: 65.58914818338198
+2025-01-04 20:44:15,899 - INFO - Explained Variance Score: 0.9888342752872511
+2025-01-04 20:44:15,899 - INFO - Directional Accuracy: 51.84%
+2025-01-04 20:44:15,909 - INFO - Model summary saved.
+2025-01-04 20:44:16,142 - INFO - Training and validation loss plot saved.
+2025-01-04 20:44:16,308 - INFO - Prediction plot saved successfully.
+2025-01-04 20:44:16,490 - INFO - Residual analysis plot saved.
+2025-01-04 20:44:16,650 - INFO - Rolling RMSE plot saved.
+2025-01-04 20:44:16,830 - INFO - Error distribution plot saved.
