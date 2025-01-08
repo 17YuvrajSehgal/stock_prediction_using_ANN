@@ -8,6 +8,7 @@ import numpy as np
 import ta
 import yfinance as yf
 from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.model_selection import ParameterGrid
 from sklearn.preprocessing import MinMaxScaler
 from tensorflow.keras import Sequential
 from tensorflow.keras.layers import Input, LSTM, Dense, Dropout, Bidirectional
@@ -64,6 +65,31 @@ def create_dataset(dataset, look_back=60):
     return np.array(X), np.array(y)
 
 
+def build_and_train_model(params, X_train, y_train):
+    log_and_print(f"Building model with params: {params}")
+    model = Sequential([
+        Input(shape=(X_train.shape[1], X_train.shape[2])),  # Explicit input layer
+        Bidirectional(LSTM(units=params['lstm_units'], return_sequences=True)),
+        Dropout(params['dropout_rate']),
+        Bidirectional(LSTM(units=params['lstm_units'], return_sequences=False)),
+        Dropout(params['dropout_rate']),
+        Dense(units=25, activation='relu'),
+        Dense(units=1)
+    ])
+
+    model.compile(optimizer=Adam(learning_rate=params['learning_rate']), loss='mean_squared_error')
+
+    history = model.fit(
+        X_train, y_train,
+        epochs=params['epochs'],
+        batch_size=params['batch_size'],
+        validation_split=0.2,
+        verbose=0
+    )
+
+    return model, history
+
+
 # Fetch data for training
 ticker = "^GSPC"
 start_date = "2020-01-01"
@@ -87,83 +113,75 @@ X_train, y_train = create_dataset(scaled_data, look_back)
 # Reshape data for LSTM
 X_train = np.reshape(X_train, (X_train.shape[0], X_train.shape[1], X_train.shape[2]))
 
-# Build the LSTM model
-log_and_print("Building the LSTM model...")
-model = Sequential([
-    Input(shape=(X_train.shape[1], X_train.shape[2])),  # Explicit input layer
-    Bidirectional(LSTM(units=50, return_sequences=True)),
-    Dropout(0.3),  # Increased regularization
-    Bidirectional(LSTM(units=50, return_sequences=False)),
-    Dropout(0.3),
-    Dense(units=25, activation='relu'),
-    Dense(units=1)
-])
-log_and_print("Model built successfully.")
+# Hyperparameter optimization
+param_grid = {
+    'lstm_units': [50, 100],
+    'dropout_rate': [0.2, 0.3],
+    'learning_rate': [0.001, 0.0005],
+    'batch_size': [32, 64],
+    'epochs': [50, 100]
+}
 
-# Compile the model with Adam optimizer and learning rate tuning
-model.compile(optimizer=Adam(learning_rate=0.001), loss='mean_squared_error')
+best_model = None
+best_score = float('inf')
 
-# Train the model with validation split
-log_and_print("Starting model training...")
-history = model.fit(X_train, y_train, epochs=100, batch_size=64, validation_split=0.2)
-log_and_print("Model training completed.")
+for params in ParameterGrid(param_grid):
+    model, history = build_and_train_model(params, X_train, y_train)
 
-# Save model
-model.save("models/stock_lstm_model.h5")
-log_and_print("Model saved successfully.")
+    # Create a separate folder for each parameter combination
+    param_str = f"units{params['lstm_units']}_dropout{params['dropout_rate']}_lr{params['learning_rate']}_batch{params['batch_size']}_epochs{params['epochs']}"
+    model_folder = f"models/{param_str}"
+    plot_folder = f"plots/{param_str}"
+    os.makedirs(model_folder, exist_ok=True)
+    os.makedirs(plot_folder, exist_ok=True)
 
-# Fetch test data
-test_start_date = "2024-01-01"
-test_end_date = "2024-12-31"
-test_data = fetch_data(ticker, test_start_date, test_end_date)
+    # Save the model
+    model.save(f"{model_folder}/model.h5")
 
-# Add technical indicators to test data
-test_data = add_technical_indicators(test_data)
+    # Plot and save training/validation loss
+    plt.figure(figsize=(14, 7))
+    plt.plot(history.history['loss'], label='Training Loss', color='blue')
+    plt.plot(history.history['val_loss'], label='Validation Loss', color='orange')
+    plt.title(f"Loss for {param_str}")
+    plt.xlabel("Epochs")
+    plt.ylabel("Loss")
+    plt.legend()
+    plt.savefig(f"{plot_folder}/loss.png")
+    plt.close()
 
-# Handle missing values in test data
-test_data = test_data.dropna()
+    # Evaluate on training data (as proxy for now)
+    train_loss = history.history['val_loss'][-1]
 
-scaled_test_data = scaler.transform(test_data[['Close', 'RSI', 'Lower_Band', 'Upper_Band', 'Daily_Log_Return']].values)
-X_test, y_test = create_dataset(scaled_test_data, look_back)
+    # Predict on training data for visualization
+    predictions = model.predict(X_train)
+    predicted_prices = scaler.inverse_transform(np.hstack((predictions, np.zeros((predictions.shape[0], 4)))))
+    true_prices = scaler.inverse_transform(np.hstack((y_train.reshape(-1, 1), np.zeros((y_train.shape[0], 4)))))
 
-# Reshape for prediction
-X_test = np.reshape(X_test, (X_test.shape[0], X_test.shape[1], X_test.shape[2]))
+    # Save prediction plot
+    plt.figure(figsize=(14, 7))
+    plt.plot(true_prices[:, 0], label="True Prices", color="blue")
+    plt.plot(predicted_prices[:, 0], label="Predicted Prices", color="red")
+    plt.title(f"Predictions vs True Prices for {param_str}")
+    plt.xlabel("Time Steps")
+    plt.ylabel("Stock Price")
+    plt.legend()
+    plt.savefig(f"{plot_folder}/predictions.png")
+    plt.close()
 
-# Predict
-log_and_print("Starting predictions...")
-predictions = model.predict(X_test)
-log_and_print("Predictions completed.")
+    # Save statistics (e.g., loss, RMSE, R2) to a log file
+    mse = mean_squared_error(true_prices[:, 0], predicted_prices[:, 0])
+    rmse = np.sqrt(mse)
+    r2 = r2_score(true_prices[:, 0], predicted_prices[:, 0])
 
-# Inverse scale predictions
-predicted_prices = scaler.inverse_transform(np.hstack((predictions, np.zeros((predictions.shape[0], 4)))))
-true_prices = scaler.inverse_transform(np.hstack((y_test.reshape(-1, 1), np.zeros((y_test.shape[0], 4)))))
+    with open(f"{model_folder}/stats.txt", "w") as stats_file:
+        stats_file.write(f"MSE: {mse}\n")
+        stats_file.write(f"RMSE: {rmse}\n")
+        stats_file.write(f"R2 Score: {r2}\n")
+        stats_file.write(f"Validation Loss: {train_loss}\n")
 
-# Metrics
-mse = mean_squared_error(true_prices[:, 0], predicted_prices[:, 0])
-rmse = np.sqrt(mse)
-r2 = r2_score(true_prices[:, 0], predicted_prices[:, 0])
+    if train_loss < best_score:
+        best_model = model
+        best_score = train_loss
 
-log_and_print(f"Mean Squared Error: {mse}")
-log_and_print(f"Root Mean Squared Error: {rmse}")
-log_and_print(f"R^2 Score: {r2}")
-
-# Plot training and validation loss
-plt.figure(figsize=(14, 7))
-plt.plot(history.history['loss'], label='Training Loss', color='blue')
-plt.plot(history.history['val_loss'], label='Validation Loss', color='orange')
-plt.title("Model Loss Over Epochs")
-plt.xlabel("Epochs")
-plt.ylabel("Loss")
-plt.legend()
-plt.savefig("plots/loss_plot.png")  # Save loss plot
-
-# Plot predictions vs. true prices
-plt.figure(figsize=(14, 7))
-plt.plot(test_data.index[look_back + 1:], true_prices[:, 0], label="True Prices", color="blue")
-plt.plot(test_data.index[look_back + 1:], predicted_prices[:, 0], label="Predicted Prices", color="red")
-plt.title(f"{ticker} Stock Price Prediction")
-plt.xlabel("Date")
-plt.ylabel("Stock Price")
-plt.legend()
-plt.savefig("plots/prediction_plot.png")  # Save prediction plot
-log_and_print("Plots saved successfully.")
+log_and_print(f"Best model parameters: {best_model}")
+log_and_print(f"Best score: {best_score}")
