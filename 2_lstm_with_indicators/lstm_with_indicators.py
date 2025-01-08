@@ -136,7 +136,7 @@ for params in ParameterGrid(param_grid):
     os.makedirs(plot_folder, exist_ok=True)
 
     # Save the model
-    model.save(f"{model_folder}/model.h5")
+    model.save(f"{model_folder}/model.keras")
 
     # Plot and save training/validation loss
     plt.figure(figsize=(14, 7))
@@ -183,5 +183,5 @@ for params in ParameterGrid(param_grid):
         best_model = model
         best_score = train_loss
 
-log_and_print(f"Best model parameters: {best_model}")
+log_and_print(f"Best model parameters: {best_model.get_config()}")
 log_and_print(f"Best score: {best_score}")
