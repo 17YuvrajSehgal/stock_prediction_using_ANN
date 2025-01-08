@@ -1,6 +1,7 @@
 import logging
 import os
 
+import joblib
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
@@ -9,13 +10,15 @@ import yfinance as yf
 from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.preprocessing import MinMaxScaler
 from tensorflow.keras import Sequential
-from tensorflow.keras.layers import Input, LSTM, Dense, Dropout
+from tensorflow.keras.layers import Input, LSTM, Dense, Dropout, Bidirectional
 from tensorflow.keras.optimizers import Adam
 
 matplotlib.use("TkAgg")  # Use the TkAgg backend for plotting
 
-# Create logs directory if not exists
+# Create directories if not exists
 os.makedirs("logs", exist_ok=True)
+os.makedirs("plots", exist_ok=True)
+os.makedirs("models", exist_ok=True)
 
 # Configure logging
 logging.basicConfig(
@@ -76,6 +79,7 @@ data = data.dropna()
 # Prepare training data
 scaler = MinMaxScaler(feature_range=(0, 1))
 scaled_data = scaler.fit_transform(data[['Close', 'RSI', 'Lower_Band', 'Upper_Band', 'Daily_Log_Return']].values)
+joblib.dump(scaler, "models/scaler.pkl")  # Save scaler for later use
 
 look_back = 60
 X_train, y_train = create_dataset(scaled_data, look_back)
@@ -87,11 +91,11 @@ X_train = np.reshape(X_train, (X_train.shape[0], X_train.shape[1], X_train.shape
 log_and_print("Building the LSTM model...")
 model = Sequential([
     Input(shape=(X_train.shape[1], X_train.shape[2])),  # Explicit input layer
-    LSTM(units=50, return_sequences=True),
-    Dropout(0.2),  # Regularization
-    LSTM(units=50, return_sequences=False),
-    Dropout(0.2),
-    Dense(units=25),
+    Bidirectional(LSTM(units=50, return_sequences=True)),
+    Dropout(0.3),  # Increased regularization
+    Bidirectional(LSTM(units=50, return_sequences=False)),
+    Dropout(0.3),
+    Dense(units=25, activation='relu'),
     Dense(units=1)
 ])
 log_and_print("Model built successfully.")
@@ -101,8 +105,12 @@ model.compile(optimizer=Adam(learning_rate=0.001), loss='mean_squared_error')
 
 # Train the model with validation split
 log_and_print("Starting model training...")
-history = model.fit(X_train, y_train, epochs=50, batch_size=64, validation_split=0.2)
+history = model.fit(X_train, y_train, epochs=100, batch_size=64, validation_split=0.2)
 log_and_print("Model training completed.")
+
+# Save model
+model.save("models/stock_lstm_model.h5")
+log_and_print("Model saved successfully.")
 
 # Fetch test data
 test_start_date = "2024-01-01"
