@@ -2,9 +2,9 @@ import logging
 import os
 
 import joblib
-import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import ta
 import yfinance as yf
 from sklearn.metrics import mean_squared_error, r2_score
@@ -14,8 +14,6 @@ from tensorflow.keras import Sequential
 from tensorflow.keras.layers import Input, LSTM, Dense, Dropout, Bidirectional
 from tensorflow.keras.layers import SimpleRNN
 from tensorflow.keras.optimizers import Adam
-
-matplotlib.use("TkAgg")  # Use the TkAgg backend for plotting
 
 # Create directories if not exists
 os.makedirs("logs", exist_ok=True)
@@ -28,6 +26,9 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
+
+pd.set_option('display.max_columns', None)  # Show all columns
+pd.set_option('display.max_rows', None)    # Show all rows (optional, be cautious with large data)
 
 
 def log_and_print(message):
@@ -100,6 +101,8 @@ data = fetch_data(ticker, start_date, end_date)
 
 # Add technical indicators
 data = add_technical_indicators(data)
+
+print(data.head(50))
 
 # Handle missing values introduced by indicators
 data = data.dropna()
