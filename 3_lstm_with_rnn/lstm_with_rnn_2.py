@@ -124,6 +124,16 @@ def simulate_investments(
       - Start with `initial_capital` dollars in cash, 0 shares.
       - If the model predicts next day's price will be higher, buy `transaction_amount` worth of shares (if enough cash).
       - If the model predicts next day's price will be lower, sell `transaction_amount` worth of shares (if enough shares).
+
+    Args:
+        model (keras.Model): Trained model.
+        X_test (np.array): Feature data for test set (shape: [samples, timesteps, features]).
+        y_test (np.array): True prices (scaled) for the test set.
+        data (pd.DataFrame): Original dataframe with dates and close prices (for indexing).
+        scaler (MinMaxScaler): Fitted scaler to invert predictions.
+        look_back (int): Number of look-back steps used in creating the dataset.
+        initial_capital (float): Starting cash.
+        transaction_amount (float): Amount in $ to invest or withdraw each time the model signals a move.
     """
     log_and_print("Starting investment simulation...")
 
@@ -143,7 +153,16 @@ def simulate_investments(
 
     # 3) Identify the corresponding date indices for X_test
     test_start_idx = len(data) - len(X_test)
-    test_dates = data.index[test_start_idx + look_back:]
+    # Attempt to include one extra date to prevent IndexError
+    try:
+        test_dates = data.index[test_start_idx + look_back: test_start_idx + look_back + len(X_test) + 1]
+        if len(test_dates) < len(X_test) + 1:
+            raise IndexError("Not enough dates for simulation.")
+    except IndexError:
+        log_and_print("Warning: Not enough dates in test_dates to simulate investments for all predictions.")
+        # Adjust test_dates to have the necessary length by excluding the last prediction
+        test_dates = data.index[test_start_idx + look_back: test_start_idx + look_back + len(X_test)]
+        log_and_print("Adjusted test_dates to match available data. The last prediction will be skipped.")
 
     # 4) Initialize simulation variables
     cash = initial_capital
@@ -152,19 +171,21 @@ def simulate_investments(
     # We'll track daily portfolio values
     portfolio_values = []
 
-    # 5) Loop through each test day
-    for i in range(len(predictions_unscaled) - 1):
-        today_date = test_dates[i]
-        tomorrow_date = test_dates[i + 1]
-
-        predicted_price_today = predictions_unscaled[i]
-        predicted_price_tomorrow = predictions_unscaled[i + 1]
-        actual_price_tomorrow = y_test_unscaled[i + 1]
-
-        actual_price_today = y_test_unscaled[i]
+    # 5) Loop through each test day safely using zip to prevent IndexError
+    # Zip will automatically stop at the shortest iterable, preventing out-of-bounds access
+    for today_date, tomorrow_date, pred_today, pred_tomorrow, actual_tomorrow in zip(
+            test_dates[:-1],  # All but the last date
+            test_dates[1:],   # All but the first date
+            predictions_unscaled[:-1],
+            predictions_unscaled[1:],
+            y_test_unscaled[1:]
+    ):
+        # Current portfolio value = cash + shares_held * actual_price_today
+        actual_price_today = y_test_unscaled[np.where(test_dates == today_date)[0][0]]
         portfolio_value_today = cash + shares_held * actual_price_today
 
-        if predicted_price_tomorrow > predicted_price_today:
+        # Determine action based on prediction for tomorrow vs today
+        if pred_tomorrow > pred_today:
             # Predicted to go up => BUY
             if cash >= transaction_amount:
                 shares_to_buy = transaction_amount / actual_price_today
@@ -192,13 +213,17 @@ def simulate_investments(
             else:
                 log_and_print(f"{today_date} - PREDICTING FALL but NOT ENOUGH SHARES to sell. Holding...")
 
+        # Log predicted vs actual for tomorrow
         log_and_print(
-            f"  Predicted next-day price: {predicted_price_tomorrow:.2f} | "
-            f"Actual next-day price: {actual_price_tomorrow:.2f}"
+            f"  Predicted next-day price: {pred_tomorrow:.2f} | "
+            f"Actual next-day price: {actual_tomorrow:.2f}"
         )
 
+        # Record portfolio value after today's action, valued at today's actual price
         portfolio_values.append(portfolio_value_today)
 
+    # After loop ends, log final state
+    # The last day’s portfolio value is valued at the last actual price
     final_portfolio_value = cash + shares_held * y_test_unscaled[-1]
     log_and_print(f"Final Simulation Results:\n"
                   f"  Final Cash: {cash:.2f}\n"
@@ -206,6 +231,7 @@ def simulate_investments(
                   f"  Final Stock Price: {y_test_unscaled[-1]:.2f}\n"
                   f"  Final Portfolio Value: {final_portfolio_value:.2f}")
 
+    # Return details for further analysis if desired
     return portfolio_values, final_portfolio_value
 
 
