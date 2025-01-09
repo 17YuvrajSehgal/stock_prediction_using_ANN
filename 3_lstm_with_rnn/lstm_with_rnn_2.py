@@ -5,7 +5,7 @@ import warnings
 import joblib
 import matplotlib.pyplot as plt
 import numpy as np
-# import optuna  # <- REMOVED/COMMENTED OUT for single-run
+import optuna  # Re-enabled Optuna for hyperparameter optimization
 import pandas as pd
 import ta
 import yfinance as yf
@@ -175,13 +175,15 @@ def simulate_investments(
     # Zip will automatically stop at the shortest iterable, preventing out-of-bounds access
     for today_date, tomorrow_date, pred_today, pred_tomorrow, actual_tomorrow in zip(
             test_dates[:-1],  # All but the last date
-            test_dates[1:],   # All but the first date
+            test_dates[1:],  # All but the first date
             predictions_unscaled[:-1],
             predictions_unscaled[1:],
             y_test_unscaled[1:]
     ):
         # Current portfolio value = cash + shares_held * actual_price_today
-        actual_price_today = y_test_unscaled[np.where(test_dates == today_date)[0][0]]
+        # Find the index of today_date in data
+        today_idx = data.index.get_loc(today_date)
+        actual_price_today = data['Close'].iloc[today_idx]
         portfolio_value_today = cash + shares_held * actual_price_today
 
         # Determine action based on prediction for tomorrow vs today
@@ -237,120 +239,234 @@ def simulate_investments(
 
 # ===================== MAIN SCRIPT STARTS HERE =====================
 
-# Fetch data
-ticker = "^GSPC"
-start_date = "2020-01-01"
-end_date = "2025-01-04"
-data = fetch_data(ticker, start_date, end_date)
+if __name__ == "__main__":
+    # Fetch data
+    ticker = "^GSPC"
+    start_date = "2020-01-01"
+    end_date = "2025-01-04"
+    data = fetch_data(ticker, start_date, end_date)
 
-# Add technical indicators
-data = add_technical_indicators(data)
+    # Add technical indicators
+    data = add_technical_indicators(data)
 
-# Handle missing values introduced by technical indicators
-log_and_print("Handling missing values...")
-data.ffill(inplace=True)
-data.bfill(inplace=True)
+    # Handle missing values introduced by technical indicators
+    log_and_print("Handling missing values...")
+    data.ffill(inplace=True)
+    data.bfill(inplace=True)
 
-# Check for any remaining nulls
-if data.isnull().sum().sum() == 0:
-    log_and_print("All missing values handled successfully.")
-else:
-    log_and_print("Warning: Missing values remain in the dataset!")
+    # Check for any remaining nulls
+    if data.isnull().sum().sum() == 0:
+        log_and_print("All missing values handled successfully.")
+    else:
+        log_and_print("Warning: Missing values remain in the dataset!")
 
-# Save cleaned dataset
-csv_file_path = "cleaned_data_with_technical_indicators.csv"
-data.to_csv(csv_file_path, index=True)
-log_and_print(f"Cleaned dataset saved to CSV: {csv_file_path}")
+    # Save cleaned dataset
+    csv_file_path = "cleaned_data_with_technical_indicators.csv"
+    data.to_csv(csv_file_path, index=True)
+    log_and_print(f"Cleaned dataset saved to CSV: {csv_file_path}")
 
-# Scale features
-scaler = MinMaxScaler(feature_range=(0, 1))
-scaled_data = scaler.fit_transform(
-    data[['Close', 'RSI', 'Lower_Band', 'Upper_Band', 'Daily_Log_Return']].values
-)
-joblib.dump(scaler, "models/scaler.pkl")  # Save the scaler
+    # Scale features
+    scaler = MinMaxScaler(feature_range=(0, 1))
+    scaled_data = scaler.fit_transform(
+        data[['Close', 'RSI', 'Lower_Band', 'Upper_Band', 'Daily_Log_Return']].values
+    )
+    joblib.dump(scaler, "models/scaler.pkl")  # Save the scaler
 
-# Create dataset with time-window
-look_back = 60
-X, y = create_dataset(scaled_data, look_back)
+    # Create dataset with time-window
+    look_back = 60
+    X, y = create_dataset(scaled_data, look_back)
 
-# ---------------- SPLIT into Train & Test Sets ----------------
-train_size = int(len(X) * 0.8)
-X_train, X_test = X[:train_size], X[train_size:]
-y_train, y_test = y[:train_size], y[train_size:]
+    # ---------------- SPLIT into Train & Test Sets ----------------
+    train_size = int(len(X) * 0.8)
+    X_train, X_test = X[:train_size], X[train_size:]
+    y_train, y_test = y[:train_size], y[train_size:]
 
-# Reshape for Keras (batch_size, timesteps, features)
-X_train = X_train.reshape((X_train.shape[0], X_train.shape[1], X_train.shape[2]))
-X_test = X_test.reshape((X_test.shape[0], X_test.shape[1], X_test.shape[2]))
+    # Reshape for Keras (batch_size, timesteps, features)
+    X_train = X_train.reshape((X_train.shape[0], X_train.shape[1], X_train.shape[2]))
+    X_test = X_test.reshape((X_test.shape[0], X_test.shape[1], X_test.shape[2]))
 
-# ------------------- SINGLE HYPERPARAMETER SET -------------------
-# Removed Optuna optimization; using fixed parameters instead.
-fixed_params = {
-    "rnn_units": 50,
-    "lstm_units": 50,
-    "dropout_rate": 0.2,
-    "learning_rate": 0.001,
-    "batch_size": 32,
-    "epochs": 50
-}
 
-# Train the model with the fixed hyperparameters
-model, history = build_and_train_hybrid_model(fixed_params, X_train, y_train)
+    # ------------------- OPTUNA HYPERPARAMETER OPTIMIZATION -------------------
 
-# OPTIONAL: You can save training/validation curves if needed
-plt.figure(figsize=(14, 7))
-plt.plot(history.history['loss'], label='Training Loss', color='blue')
-plt.plot(history.history['val_loss'], label='Validation Loss', color='orange')
-plt.title("Loss Over Epochs (Fixed Hyperparameters)")
-plt.xlabel("Epochs")
-plt.ylabel("Loss")
-plt.legend()
-plt.savefig("plots/fixed_model_loss.png")
-plt.close()
+    def objective(trial):
+        # Suggest hyperparameters for this trial
+        rnn_units = trial.suggest_int("rnn_units", 10, 100, step=10)
+        lstm_units = trial.suggest_int("lstm_units", 10, 100, step=10)
+        dropout_rate = trial.suggest_float("dropout_rate", 0.1, 0.5, step=0.1)
+        learning_rate = trial.suggest_float("learning_rate", 1e-5, 1e-2, log=True)
+        batch_size = trial.suggest_categorical("batch_size", [16, 32, 64])
+        epochs = trial.suggest_int("epochs", 10, 100, step=10)
 
-# Test set predictions for visualization
-predictions = model.predict(X_test)
-predictions_unscaled = scaler.inverse_transform(
-    np.hstack((predictions, np.zeros((predictions.shape[0], scaled_data.shape[1] - 1))))
-)[:, 0]
-y_test_unscaled = scaler.inverse_transform(
-    np.hstack((y_test.reshape(-1, 1), np.zeros((y_test.shape[0], scaled_data.shape[1] - 1))))
-)[:, 0]
+        # Build and train the model
+        params = {
+            "rnn_units": rnn_units,
+            "lstm_units": lstm_units,
+            "dropout_rate": dropout_rate,
+            "learning_rate": learning_rate,
+            "batch_size": batch_size,
+            "epochs": epochs,
+        }
+        model, history = build_and_train_hybrid_model(params, X_train, y_train)
 
-plt.figure(figsize=(14, 7))
-plt.plot(y_test_unscaled, label="True Prices", color="blue")
-plt.plot(predictions_unscaled, label="Predicted Prices", color="red")
-plt.title("Predictions vs True Prices (Fixed Hyperparameters)")
-plt.xlabel("Time Steps")
-plt.ylabel("Price")
-plt.legend()
-plt.savefig("plots/fixed_model_predictions_vs_actual.png")
-plt.close()
+        # Evaluate validation loss (last epoch)
+        val_loss = history.history['val_loss'][-1]
 
-# Evaluate model performance on test set
-test_mse = mean_squared_error(y_test_unscaled, predictions_unscaled)
-test_rmse = np.sqrt(test_mse)
-test_mae = mean_absolute_error(y_test_unscaled, predictions_unscaled)
-test_r2 = r2_score(y_test_unscaled, predictions_unscaled)
+        # Create folders for this trial
+        param_str = (
+            f"units{params['lstm_units']}_dropout{params['dropout_rate']}"
+            f"_lr{params['learning_rate']}_batch{params['batch_size']}_epochs{params['epochs']}"
+        )
+        model_folder = f"models/{param_str}"
+        plot_folder = f"plots/{param_str}"
+        os.makedirs(model_folder, exist_ok=True)
+        os.makedirs(plot_folder, exist_ok=True)
 
-log_and_print(f"Fixed Model Test MSE: {test_mse}")
-log_and_print(f"Fixed Model Test RMSE: {test_rmse}")
-log_and_print(f"Fixed Model Test MAE: {test_mae}")
-log_and_print(f"Fixed Model Test R2: {test_r2}")
+        # Save the model
+        model.save(f"{model_folder}/model.keras")
 
-# Simulate investments
-portfolio_values, final_value = simulate_investments(
-    model=model,
-    X_test=X_test,
-    y_test=y_test,
-    data=data,
-    scaler=scaler,
-    look_back=look_back,
-    initial_capital=1_000_000,
-    transaction_amount=10_000
-)
+        # Plot training & validation loss
+        plt.figure(figsize=(14, 7))
+        plt.plot(history.history['loss'], label='Training Loss', color='blue')
+        plt.plot(history.history['val_loss'], label='Validation Loss', color='orange')
+        plt.title(f"Loss for {param_str}")
+        plt.xlabel("Epochs")
+        plt.ylabel("Loss")
+        plt.legend()
+        plt.savefig(f"{plot_folder}/loss.png")
+        plt.close()
 
-# Save the single-run model
-fixed_model_folder = "models/fixed_params_model"
-os.makedirs(fixed_model_folder, exist_ok=True)
-model.save(f"{fixed_model_folder}/fixed_model.keras")
-log_and_print(f"Fixed model saved to '{fixed_model_folder}/fixed_model.keras'")
+        # Predictions vs. True Values on Test Set
+        predictions = model.predict(X_test)
+        predictions_unscaled = scaler.inverse_transform(
+            np.hstack((predictions, np.zeros((predictions.shape[0], scaled_data.shape[1] - 1))))
+        )[:, 0]
+        y_test_unscaled_val = scaler.inverse_transform(
+            np.hstack((y_test.reshape(-1, 1), np.zeros((y_test.shape[0], scaled_data.shape[1] - 1))))
+        )[:, 0]
+
+        plt.figure(figsize=(14, 7))
+        plt.plot(y_test_unscaled_val, label="True Prices", color="blue")
+        plt.plot(predictions_unscaled, label="Predicted Prices", color="red")
+        plt.title(f"Predictions vs True Prices for {param_str}")
+        plt.xlabel("Time Steps")
+        plt.ylabel("Price")
+        plt.legend()
+        plt.savefig(f"{plot_folder}/predictions_vs_actual.png")
+        plt.close()
+
+        # Save stats
+        with open(f"{model_folder}/stats.txt", "w") as stats_file:
+            stats_file.write(f"Validation Loss: {val_loss}\n")
+            test_mse = mean_squared_error(y_test_unscaled_val, predictions_unscaled)
+            test_rmse = np.sqrt(test_mse)
+            test_mae = mean_absolute_error(y_test_unscaled_val, predictions_unscaled)
+            test_r2 = r2_score(y_test_unscaled_val, predictions_unscaled)
+            stats_file.write(f"Test MSE: {test_mse}\n")
+            stats_file.write(f"Test RMSE: {test_rmse}\n")
+            stats_file.write(f"Test MAE: {test_mae}\n")
+            stats_file.write(f"Test R2 Score: {test_r2}\n")
+
+        trial.report(val_loss, step=epochs)
+
+        # If validation loss is worse than the pruning threshold, prune the trial
+        if trial.should_prune():
+            raise optuna.exceptions.TrialPruned()
+
+        return val_loss
+
+
+    # Create Optuna study
+    study = optuna.create_study(direction="minimize")
+
+    # Optimize the study with the objective function
+    study.optimize(objective, n_trials=50, timeout=3600)
+
+    # Log the best hyperparameters and their corresponding score
+    best_params = study.best_params
+    best_val_loss = study.best_value
+
+    log_and_print(f"Best Parameters: {best_params}")
+    log_and_print(f"Best Validation Loss: {best_val_loss}")
+
+    # ------------------- TRAIN THE BEST MODEL -------------------
+    # Build and train the best model with the optimal hyperparameters
+    best_model, best_history = build_and_train_hybrid_model(best_params, X_train, y_train)
+
+    # Save the best model
+    best_param_str = (
+        f"units{best_params['lstm_units']}_dropout{best_params['dropout_rate']}"
+        f"_lr{best_params['learning_rate']}_batch{best_params['batch_size']}_epochs{best_params['epochs']}"
+    )
+    best_model_folder = f"models/{best_param_str}"
+    plot_folder = f"plots/{best_param_str}"
+    os.makedirs(best_model_folder, exist_ok=True)
+    os.makedirs(plot_folder, exist_ok=True)
+    best_model.save(f"{best_model_folder}/best_model.keras")
+    log_and_print(f"Best model saved to '{best_model_folder}/best_model.keras'")
+
+    # Plot training & validation loss for the best model
+    plt.figure(figsize=(14, 7))
+    plt.plot(best_history.history['loss'], label='Training Loss', color='blue')
+    plt.plot(best_history.history['val_loss'], label='Validation Loss', color='orange')
+    plt.title("Loss Over Epochs (Best Hyperparameters)")
+    plt.xlabel("Epochs")
+    plt.ylabel("Loss")
+    plt.legend()
+    plt.savefig(f"{plot_folder}/best_model_loss.png")
+    plt.close()
+
+    # Test set predictions for visualization
+    predictions = best_model.predict(X_test)
+    predictions_unscaled = scaler.inverse_transform(
+        np.hstack((predictions, np.zeros((predictions.shape[0], scaled_data.shape[1] - 1))))
+    )[:, 0]
+    y_test_unscaled = scaler.inverse_transform(
+        np.hstack((y_test.reshape(-1, 1), np.zeros((y_test.shape[0], scaled_data.shape[1] - 1))))
+    )[:, 0]
+
+    plt.figure(figsize=(14, 7))
+    plt.plot(y_test_unscaled, label="True Prices", color="blue")
+    plt.plot(predictions_unscaled, label="Predicted Prices", color="red")
+    plt.title("Predictions vs True Prices (Best Hyperparameters)")
+    plt.xlabel("Time Steps")
+    plt.ylabel("Price")
+    plt.legend()
+    plt.savefig(f"{plot_folder}/best_model_predictions_vs_actual.png")
+    plt.close()
+
+    # Evaluate model performance on test set
+    test_mse = mean_squared_error(y_test_unscaled, predictions_unscaled)
+    test_rmse = np.sqrt(test_mse)
+    test_mae = mean_absolute_error(y_test_unscaled, predictions_unscaled)
+    test_r2 = r2_score(y_test_unscaled, predictions_unscaled)
+
+    log_and_print(f"Best Model Test MSE: {test_mse}")
+    log_and_print(f"Best Model Test RMSE: {test_rmse}")
+    log_and_print(f"Best Model Test MAE: {test_mae}")
+    log_and_print(f"Best Model Test R2: {test_r2}")
+
+    # ------------------- SIMULATE INVESTMENTS -------------------
+    portfolio_values, final_value = simulate_investments(
+        model=best_model,
+        X_test=X_test,
+        y_test=y_test,
+        data=data,
+        scaler=scaler,
+        look_back=look_back,
+        initial_capital=1_000_000,
+        transaction_amount=10_000
+    )
+
+    # OPTIONAL: Plot Portfolio Values Over Time
+    plt.figure(figsize=(14, 7))
+    plt.plot(portfolio_values, label="Portfolio Value", color="green")
+    plt.title("Portfolio Value Over Time")
+    plt.xlabel("Trades")
+    plt.ylabel("Portfolio Value ($)")
+    plt.legend()
+    plt.savefig(f"{plot_folder}/portfolio_values.png")
+    plt.close()
+
+    # Save the best model again (redundant but ensures it's saved after all operations)
+    best_model.save(f"{best_model_folder}/best_model.keras")
+    log_and_print(f"Best model saved to '{best_model_folder}/best_model.keras'")
