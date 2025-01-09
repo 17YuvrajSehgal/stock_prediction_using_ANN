@@ -45,7 +45,10 @@ def log_and_print(message):
 # Fetch stock market data
 def fetch_data(ticker, start_date, end_date):
     log_and_print(f"Fetching data for {ticker} from {start_date} to {end_date}")
-    return yf.download(ticker, start=start_date, end=end_date)
+    data = yf.download(ticker, start=start_date, end=end_date)
+    if data.empty:
+        log_and_print("No data fetched. Please check the ticker and date range.")
+    return data
 
 
 # Add technical indicators
@@ -168,11 +171,16 @@ def simulate_investments(
     cash = initial_capital
     shares_held = 0
 
-    # We'll track daily portfolio values
+    # We'll track daily portfolio values and trade dates
     portfolio_values = []
+    trade_dates = []
 
-    # 5) Loop through each test day safely using zip to prevent IndexError
-    # Zip will automatically stop at the shortest iterable, preventing out-of-bounds access
+    # 5) Check if the index is unique
+    if not data.index.is_unique:
+        log_and_print("Warning: Data index is not unique. Dropping duplicate dates, keeping first occurrence.")
+        data = data[~data.index.duplicated(keep='first')]
+
+    # 6) Loop through each test day safely using zip to prevent IndexError
     for today_date, tomorrow_date, pred_today, pred_tomorrow, actual_tomorrow in zip(
             test_dates[:-1],  # All but the last date
             test_dates[1:],  # All but the first date
@@ -180,10 +188,32 @@ def simulate_investments(
             predictions_unscaled[1:],
             y_test_unscaled[1:]
     ):
-        # Current portfolio value = cash + shares_held * actual_price_today
-        # Find the index of today_date in data
-        today_idx = data.index.get_loc(today_date)
-        actual_price_today = data['Close'].iloc[today_idx]
+        # Ensure today_date is a scalar and matches the DataFrame's index type
+        if isinstance(today_date, pd.Timestamp):
+            pass
+        elif isinstance(today_date, np.datetime64):
+            today_date = pd.Timestamp(today_date)
+        elif isinstance(today_date, str):
+            today_date = pd.Timestamp(today_date)
+        else:
+            today_date = pd.Timestamp(today_date)
+
+        # Retrieve actual_price_today safely
+        try:
+            actual_price_today = data.at[today_date, 'Close']
+        except (KeyError, TypeError):
+            # If multiple entries exist or type mismatch, select the first one
+            actual_price_today = data.loc[today_date, 'Close']
+            if isinstance(actual_price_today, pd.Series) or isinstance(actual_price_today, pd.DataFrame):
+                actual_price_today = actual_price_today.iloc[0]
+            elif isinstance(actual_price_today, np.ndarray):
+                actual_price_today = actual_price_today[0]
+            else:
+                actual_price_today = float(actual_price_today)
+
+        # Ensure actual_price_today is a float
+        actual_price_today = float(actual_price_today)
+
         portfolio_value_today = cash + shares_held * actual_price_today
 
         # Determine action based on prediction for tomorrow vs today
@@ -195,12 +225,12 @@ def simulate_investments(
                 shares_held += shares_to_buy
 
                 log_and_print(
-                    f"{today_date} - PREDICTING RISE for {tomorrow_date}: "
-                    f"Buy ${transaction_amount} worth of shares at {actual_price_today:.2f}. "
-                    f"New cash: {cash:.2f}, New shares held: {shares_held:.4f}"
+                    f"{today_date.date()} - PREDICTING RISE for {tomorrow_date.date()}: "
+                    f"Buy ${transaction_amount} worth of shares at ${actual_price_today:.2f}. "
+                    f"New cash: ${cash:.2f}, New shares held: {shares_held:.4f}"
                 )
             else:
-                log_and_print(f"{today_date} - PREDICTING RISE but NOT ENOUGH CASH to buy. Holding...")
+                log_and_print(f"{today_date.date()} - PREDICTING RISE but NOT ENOUGH CASH to buy. Holding...")
         else:
             # Predicted to go down => SELL
             shares_needed_to_sell = transaction_amount / actual_price_today
@@ -208,33 +238,36 @@ def simulate_investments(
                 shares_held -= shares_needed_to_sell
                 cash += transaction_amount
                 log_and_print(
-                    f"{today_date} - PREDICTING FALL for {tomorrow_date}: "
-                    f"Sell ${transaction_amount} worth of shares at {actual_price_today:.2f}. "
-                    f"New cash: {cash:.2f}, New shares held: {shares_held:.4f}"
+                    f"{today_date.date()} - PREDICTING FALL for {tomorrow_date.date()}: "
+                    f"Sell ${transaction_amount} worth of shares at ${actual_price_today:.2f}. "
+                    f"New cash: ${cash:.2f}, New shares held: {shares_held:.4f}"
                 )
             else:
-                log_and_print(f"{today_date} - PREDICTING FALL but NOT ENOUGH SHARES to sell. Holding...")
+                log_and_print(f"{today_date.date()} - PREDICTING FALL but NOT ENOUGH SHARES to sell. Holding...")
 
         # Log predicted vs actual for tomorrow
         log_and_print(
-            f"  Predicted next-day price: {pred_tomorrow:.2f} | "
-            f"Actual next-day price: {actual_tomorrow:.2f}"
+            f"  Predicted next-day price: ${pred_tomorrow:.2f} | "
+            f"Actual next-day price: ${actual_tomorrow:.2f}"
         )
 
         # Record portfolio value after today's action, valued at today's actual price
         portfolio_values.append(portfolio_value_today)
+        trade_dates.append(today_date)
 
     # After loop ends, log final state
     # The last day’s portfolio value is valued at the last actual price
     final_portfolio_value = cash + shares_held * y_test_unscaled[-1]
+    profit_loss = final_portfolio_value - initial_capital
     log_and_print(f"Final Simulation Results:\n"
-                  f"  Final Cash: {cash:.2f}\n"
+                  f"  Final Cash: ${cash:.2f}\n"
                   f"  Final Shares Held: {shares_held:.4f}\n"
-                  f"  Final Stock Price: {y_test_unscaled[-1]:.2f}\n"
-                  f"  Final Portfolio Value: {final_portfolio_value:.2f}")
+                  f"  Final Stock Price: ${y_test_unscaled[-1]:.2f}\n"
+                  f"  Final Portfolio Value: ${final_portfolio_value:.2f}\n"
+                  f"  Total Profit/Loss: ${profit_loss:.2f}")
 
     # Return details for further analysis if desired
-    return portfolio_values, final_portfolio_value
+    return portfolio_values, trade_dates, final_portfolio_value, profit_loss
 
 
 # ===================== MAIN SCRIPT STARTS HERE =====================
@@ -245,6 +278,10 @@ if __name__ == "__main__":
     start_date = "2020-01-01"
     end_date = "2025-01-04"
     data = fetch_data(ticker, start_date, end_date)
+
+    if data.empty:
+        log_and_print("No data fetched. Exiting the script.")
+        exit(1)
 
     # Add technical indicators
     data = add_technical_indicators(data)
@@ -259,6 +296,11 @@ if __name__ == "__main__":
         log_and_print("All missing values handled successfully.")
     else:
         log_and_print("Warning: Missing values remain in the dataset!")
+
+    # Ensure the DataFrame index is unique to prevent access issues
+    if not data.index.is_unique:
+        log_and_print("Data index is not unique. Dropping duplicate dates, keeping first occurrence.")
+        data = data[~data.index.duplicated(keep='first')]
 
     # Save cleaned dataset
     csv_file_path = "cleaned_data_with_technical_indicators.csv"
@@ -354,6 +396,28 @@ if __name__ == "__main__":
         plt.savefig(f"{plot_folder}/predictions_vs_actual.png")
         plt.close()
 
+        # ------------------- SIMULATE INVESTMENTS FOR THIS TRIAL -------------------
+        portfolio_values, trade_dates, final_portfolio_value, profit_loss = simulate_investments(
+            model=model,
+            X_test=X_test,
+            y_test=y_test,
+            data=data,
+            scaler=scaler,
+            look_back=look_back,
+            initial_capital=1_000_000,
+            transaction_amount=10_000
+        )
+
+        # Plot Portfolio Values Over Time
+        plt.figure(figsize=(14, 7))
+        plt.plot(trade_dates, portfolio_values, label="Portfolio Value", color="green")
+        plt.title(f"Portfolio Value Over Time for {param_str}")
+        plt.xlabel("Date")
+        plt.ylabel("Portfolio Value ($)")
+        plt.legend()
+        plt.savefig(f"{plot_folder}/portfolio_values.png")
+        plt.close()
+
         # Save stats
         with open(f"{model_folder}/stats.txt", "w") as stats_file:
             stats_file.write(f"Validation Loss: {val_loss}\n")
@@ -365,7 +429,10 @@ if __name__ == "__main__":
             stats_file.write(f"Test RMSE: {test_rmse}\n")
             stats_file.write(f"Test MAE: {test_mae}\n")
             stats_file.write(f"Test R2 Score: {test_r2}\n")
+            stats_file.write(f"Final Portfolio Value: ${final_portfolio_value:.2f}\n")
+            stats_file.write(f"Total Profit/Loss: ${profit_loss:.2f}\n")
 
+        # Report the validation loss to Optuna
         trial.report(val_loss, step=epochs)
 
         # If validation loss is worse than the pruning threshold, prune the trial
@@ -392,7 +459,7 @@ if __name__ == "__main__":
     # Build and train the best model with the optimal hyperparameters
     best_model, best_history = build_and_train_hybrid_model(best_params, X_train, y_train)
 
-    # Save the best model
+    # Create a unique string for the best model's parameters
     best_param_str = (
         f"units{best_params['lstm_units']}_dropout{best_params['dropout_rate']}"
         f"_lr{best_params['learning_rate']}_batch{best_params['batch_size']}_epochs{best_params['epochs']}"
@@ -401,6 +468,8 @@ if __name__ == "__main__":
     plot_folder = f"plots/{best_param_str}"
     os.makedirs(best_model_folder, exist_ok=True)
     os.makedirs(plot_folder, exist_ok=True)
+
+    # Save the best model
     best_model.save(f"{best_model_folder}/best_model.keras")
     log_and_print(f"Best model saved to '{best_model_folder}/best_model.keras'")
 
@@ -445,8 +514,8 @@ if __name__ == "__main__":
     log_and_print(f"Best Model Test MAE: {test_mae}")
     log_and_print(f"Best Model Test R2: {test_r2}")
 
-    # ------------------- SIMULATE INVESTMENTS -------------------
-    portfolio_values, final_value = simulate_investments(
+    # ------------------- SIMULATE INVESTMENTS FOR THE BEST MODEL -------------------
+    portfolio_values, trade_dates, final_value, profit_loss = simulate_investments(
         model=best_model,
         X_test=X_test,
         y_test=y_test,
@@ -457,15 +526,19 @@ if __name__ == "__main__":
         transaction_amount=10_000
     )
 
-    # OPTIONAL: Plot Portfolio Values Over Time
+    # Plot Portfolio Values Over Time for the Best Model
     plt.figure(figsize=(14, 7))
-    plt.plot(portfolio_values, label="Portfolio Value", color="green")
-    plt.title("Portfolio Value Over Time")
-    plt.xlabel("Trades")
+    plt.plot(trade_dates, portfolio_values, label="Portfolio Value", color="green")
+    plt.title("Portfolio Value Over Time (Best Hyperparameters)")
+    plt.xlabel("Date")
     plt.ylabel("Portfolio Value ($)")
     plt.legend()
-    plt.savefig(f"{plot_folder}/portfolio_values.png")
+    plt.savefig(f"{plot_folder}/best_model_portfolio_values.png")
     plt.close()
+
+    # Log final profit/loss
+    log_and_print(f"Final Portfolio Value: ${final_value:.2f}")
+    log_and_print(f"Total Profit/Loss: ${profit_loss:.2f}")
 
     # Save the best model again (redundant but ensures it's saved after all operations)
     best_model.save(f"{best_model_folder}/best_model.keras")
