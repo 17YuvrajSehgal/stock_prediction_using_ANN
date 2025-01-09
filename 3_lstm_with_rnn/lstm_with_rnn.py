@@ -9,7 +9,7 @@ import optuna
 import pandas as pd
 import ta
 import yfinance as yf
-from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
 from sklearn.preprocessing import MinMaxScaler
 from tensorflow.keras import Sequential
 from tensorflow.keras.layers import Input, LSTM, Dense, Dropout, Bidirectional, SimpleRNN
@@ -231,9 +231,11 @@ def objective(trial):
         stats_file.write(f"Validation Loss: {val_loss}\n")
         test_mse = mean_squared_error(y_test_unscaled, predictions_unscaled)
         test_rmse = np.sqrt(test_mse)
+        test_mae = mean_absolute_error(y_test_unscaled, predictions_unscaled)
         test_r2 = r2_score(y_test_unscaled, predictions_unscaled)
         stats_file.write(f"Test MSE: {test_mse}\n")
         stats_file.write(f"Test RMSE: {test_rmse}\n")
+        stats_file.write(f"Test MAE: {test_mae}\n")
         stats_file.write(f"Test R2 Score: {test_r2}\n")
 
     trial.report(val_loss, step=epochs)
