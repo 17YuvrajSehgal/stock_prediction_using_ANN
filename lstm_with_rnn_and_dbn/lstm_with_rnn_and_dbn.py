@@ -212,5 +212,4 @@ for params in ParameterGrid(param_grid):
 log_and_print(f"Best model parameters: {best_model.get_config()}")
 log_and_print(f"Best score: {best_score}")
 
-
-#todo: add preprocessing, such as removing outliers
+# todo: add preprocessing, such as removing outliers
