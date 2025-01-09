@@ -5,6 +5,7 @@ import warnings
 import joblib
 import matplotlib.pyplot as plt
 import numpy as np
+import optuna
 import pandas as pd
 import ta
 import yfinance as yf
@@ -121,11 +122,8 @@ data = add_technical_indicators(data)
 
 # Handle missing values introduced by technical indicators
 log_and_print("Handling missing values...")
-
-# Replace fillna(method='ffill' / 'bfill') with direct ffill() / bfill()
 data.ffill(inplace=True)
 data.bfill(inplace=True)
-
 
 # Check for any remaining nulls
 if data.isnull().sum().sum() == 0:
@@ -159,47 +157,33 @@ y_train, y_test = y[:train_size], y[train_size:]
 X_train = X_train.reshape((X_train.shape[0], X_train.shape[1], X_train.shape[2]))
 X_test = X_test.reshape((X_test.shape[0], X_test.shape[1], X_test.shape[2]))
 
-# Define hyperparameter grid
-param_grid = {
-    'rnn_units': [50],
-    'lstm_units': [50],
-    'dropout_rate': [0.2],
-    'learning_rate': [0.001],
-    'batch_size': [32],
-    'epochs': [50]
-}
 
-best_model = None
-best_score = float('inf')
-best_param_str = None  # We'll store the best model's param string here
+# ------------------- OPTUNA HYPERPARAMETER OPTIMIZATION -------------------
 
-# Hyperparameter optimization
-from sklearn.model_selection import ParameterGrid
+def objective(trial):
+    # Suggest hyperparameters for this trial
+    rnn_units = trial.suggest_int("rnn_units", 10, 100, step=10)
+    lstm_units = trial.suggest_int("lstm_units", 10, 100, step=10)
+    dropout_rate = trial.suggest_float("dropout_rate", 0.1, 0.5, step=0.1)
+    learning_rate = trial.suggest_float("learning_rate", 1e-5, 1e-2, log=True)
+    batch_size = trial.suggest_categorical("batch_size", [16, 32, 64])
+    epochs = trial.suggest_int("epochs", 10, 100, step=10)
 
-for params in ParameterGrid(param_grid):
+    # Build and train the model
+    params = {
+        "rnn_units": rnn_units,
+        "lstm_units": lstm_units,
+        "dropout_rate": dropout_rate,
+        "learning_rate": learning_rate,
+        "batch_size": batch_size,
+        "epochs": epochs,
+    }
     model, history = build_and_train_hybrid_model(params, X_train, y_train)
 
-    # Evaluate final epoch's validation loss
+    # Evaluate validation loss (last epoch)
     val_loss = history.history['val_loss'][-1]
 
-    # Evaluate on test set for more robust comparison
-    test_loss, test_mae, test_mape = model.evaluate(X_test, y_test, verbose=0)
-
-    # Predict on test for additional stats
-    test_preds = model.predict(X_test)
-    test_preds_unscaled = scaler.inverse_transform(
-        np.hstack((test_preds, np.zeros((test_preds.shape[0], 4))))
-    )
-    y_test_unscaled = scaler.inverse_transform(
-        np.hstack((y_test.reshape(-1, 1), np.zeros((y_test.shape[0], 4))))
-    )
-
-    # Additional metrics
-    test_mse = mean_squared_error(y_test_unscaled[:, 0], test_preds_unscaled[:, 0])
-    test_rmse = np.sqrt(test_mse)
-    test_r2 = r2_score(y_test_unscaled[:, 0], test_preds_unscaled[:, 0])
-
-    # Create folders for the current param combination
+    # Create folders for this trial
     param_str = (
         f"units{params['lstm_units']}_dropout{params['dropout_rate']}"
         f"_lr{params['learning_rate']}_batch{params['batch_size']}_epochs{params['epochs']}"
@@ -223,41 +207,66 @@ for params in ParameterGrid(param_grid):
     plt.savefig(f"{plot_folder}/loss.png")
     plt.close()
 
-    # Plot predictions vs. true (on the test set)
+    # Predictions vs. True Values on Test Set
+    predictions = model.predict(X_test)
+    predictions_unscaled = scaler.inverse_transform(
+        np.hstack((predictions, np.zeros((predictions.shape[0], scaled_data.shape[1] - 1))))
+    )[:, 0]
+    y_test_unscaled = scaler.inverse_transform(
+        np.hstack((y_test.reshape(-1, 1), np.zeros((y_test.shape[0], scaled_data.shape[1] - 1))))
+    )[:, 0]
+
     plt.figure(figsize=(14, 7))
-    plt.plot(y_test_unscaled[:, 0], label="True Test Prices", color="blue")
-    plt.plot(test_preds_unscaled[:, 0], label="Predicted Test Prices", color="red")
-    plt.title(f"Test Predictions vs True Prices for {param_str}")
-    plt.xlabel("Time Steps (Test Set)")
-    plt.ylabel("Stock Price")
+    plt.plot(y_test_unscaled, label="True Prices", color="blue")
+    plt.plot(predictions_unscaled, label="Predicted Prices", color="red")
+    plt.title(f"Predictions vs True Prices for {param_str}")
+    plt.xlabel("Time Steps")
+    plt.ylabel("Price")
     plt.legend()
-    plt.savefig(f"{plot_folder}/test_predictions.png")
+    plt.savefig(f"{plot_folder}/predictions_vs_actual.png")
     plt.close()
 
-    # Write stats to file
+    # Save stats
     with open(f"{model_folder}/stats.txt", "w") as stats_file:
         stats_file.write(f"Validation Loss: {val_loss}\n")
-        stats_file.write(f"Test Loss (MSE): {test_loss}\n")
-        stats_file.write(f"Test MAE: {test_mae}\n")
-        stats_file.write(f"Test MAPE: {test_mape}\n")
+        test_mse = mean_squared_error(y_test_unscaled, predictions_unscaled)
+        test_rmse = np.sqrt(test_mse)
+        test_r2 = r2_score(y_test_unscaled, predictions_unscaled)
         stats_file.write(f"Test MSE: {test_mse}\n")
         stats_file.write(f"Test RMSE: {test_rmse}\n")
         stats_file.write(f"Test R2 Score: {test_r2}\n")
 
-    log_and_print(
-        f"Params: {param_str} | "
-        f"Val Loss: {val_loss:.5f} | "
-        f"Test RMSE: {test_rmse:.5f} | Test R2: {test_r2:.5f}"
-    )
+    trial.report(val_loss, step=epochs)
 
-    # Update best model based on val_loss (you might choose test_loss instead)
-    if val_loss < best_score:
-        best_score = val_loss
-        best_model = model
-        best_param_str = param_str
+    # If validation loss is worse than the pruning threshold, prune the trial
+    if trial.should_prune():
+        raise optuna.exceptions.TrialPruned()
 
-# Finally, log a short name rather than printing the entire config
-log_and_print(f"Best model name: {best_param_str}")
-log_and_print(f"Best score (Val Loss): {best_score}")
+    return val_loss
 
-# todo: add preprocessing, such as removing outliers
+
+# Create Optuna study
+study = optuna.create_study(direction="minimize")
+
+# Optimize the study with the objective function
+study.optimize(objective, n_trials=50, timeout=3600)
+
+# Log the best hyperparameters and their corresponding score
+best_params = study.best_params
+best_val_loss = study.best_value
+
+log_and_print(f"Best Parameters: {best_params}")
+log_and_print(f"Best Validation Loss: {best_val_loss}")
+
+# Train the best model with the optimal hyperparameters
+best_model, best_history = build_and_train_hybrid_model(best_params, X_train, y_train)
+
+# Save the best model
+best_param_str = (
+    f"units{best_params['lstm_units']}_dropout{best_params['dropout_rate']}"
+    f"_lr{best_params['learning_rate']}_batch{best_params['batch_size']}_epochs{best_params['epochs']}"
+)
+best_model_folder = f"models/{best_param_str}"
+os.makedirs(best_model_folder, exist_ok=True)
+best_model.save(f"{best_model_folder}/best_model.keras")
+log_and_print(f"Best model saved to '{best_model_folder}/best_model.keras'")
