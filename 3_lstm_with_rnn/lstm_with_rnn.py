@@ -1,5 +1,6 @@
 import logging
 import os
+import warnings
 
 import joblib
 import matplotlib.pyplot as plt
@@ -8,12 +9,15 @@ import pandas as pd
 import ta
 import yfinance as yf
 from sklearn.metrics import mean_squared_error, r2_score
-from sklearn.model_selection import ParameterGrid
 from sklearn.preprocessing import MinMaxScaler
 from tensorflow.keras import Sequential
-from tensorflow.keras.layers import Input, LSTM, Dense, Dropout, Bidirectional
-from tensorflow.keras.layers import SimpleRNN
+from tensorflow.keras.layers import Input, LSTM, Dense, Dropout, Bidirectional, SimpleRNN
 from tensorflow.keras.optimizers import Adam
+
+# 1) Suppress TensorFlow info messages (still show warnings/errors).
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+# 2) Optionally, ignore FutureWarning if anything else arises in the future
+warnings.simplefilter(action='ignore', category=FutureWarning)
 
 # Create directories if not exists
 os.makedirs("logs", exist_ok=True)
@@ -58,11 +62,15 @@ def add_technical_indicators(data):
 
 # Prepare time-series data
 def create_dataset(dataset, look_back=60):
+    """
+    dataset: (num_samples, num_features) after scaling
+    look_back: how many timesteps to include in each sample
+    """
     log_and_print("Creating time-series dataset...")
     X, y = [], []
-    for i in range(len(dataset) - look_back - 1):
-        X.append(dataset[i:(i + look_back)])
-        y.append(dataset[i + look_back, 0])  # Predict 'Close'
+    for i in range(len(dataset) - look_back):
+        X.append(dataset[i: i + look_back])
+        y.append(dataset[i + look_back, 0])  # Predict 'Close' which is in column 0
     log_and_print("Time-series dataset created successfully.")
     return np.array(X), np.array(y)
 
@@ -70,6 +78,7 @@ def create_dataset(dataset, look_back=60):
 def build_and_train_hybrid_model(params, X_train, y_train):
     log_and_print(f"Building hybrid RNN-LSTM model with params: {params}")
 
+    # Add additional metrics in compile to track them during training
     model = Sequential([
         Input(shape=(X_train.shape[1], X_train.shape[2])),
         SimpleRNN(units=params['rnn_units'], return_sequences=True),
@@ -80,8 +89,14 @@ def build_and_train_hybrid_model(params, X_train, y_train):
         Dense(units=1)
     ])
 
-    model.compile(optimizer=Adam(learning_rate=params['learning_rate']), loss='mean_squared_error')
+    # Include MAE, MAPE as metrics for additional insight
+    model.compile(
+        optimizer=Adam(learning_rate=params['learning_rate']),
+        loss='mean_squared_error',
+        metrics=['mae', 'mape']
+    )
 
+    # Train with validation split
     history = model.fit(
         X_train, y_train,
         epochs=params['epochs'],
@@ -93,7 +108,9 @@ def build_and_train_hybrid_model(params, X_train, y_train):
     return model, history
 
 
-# Fetch data for training
+# ===================== MAIN SCRIPT STARTS HERE =====================
+
+# Fetch data
 ticker = "^GSPC"
 start_date = "2020-01-01"
 end_date = "2025-01-04"
@@ -105,57 +122,88 @@ data = add_technical_indicators(data)
 # Handle missing values introduced by technical indicators
 log_and_print("Handling missing values...")
 
-# Option 1: Fill missing values (forward fill, then backward fill)
-data.fillna(method='ffill', inplace=True)  # Forward fill
-data.fillna(method='bfill', inplace=True)  # Backward fill
+# Replace fillna(method='ffill' / 'bfill') with direct ffill() / bfill()
+data.ffill(inplace=True)
+data.bfill(inplace=True)
 
-# Option 2: Drop rows with missing values (e.g., first few rows from rolling indicators)
-# Uncomment this if you prefer dropping instead of filling
-# data.dropna(inplace=True)
 
-# Ensure no missing values remain
+# Check for any remaining nulls
 if data.isnull().sum().sum() == 0:
     log_and_print("All missing values handled successfully.")
 else:
     log_and_print("Warning: Missing values remain in the dataset!")
 
-# Save the cleaned dataset for inspection
+# Save cleaned dataset
 csv_file_path = "cleaned_data_with_technical_indicators.csv"
 data.to_csv(csv_file_path, index=True)
 log_and_print(f"Cleaned dataset saved to CSV: {csv_file_path}")
 
-# Continue with further preprocessing and model preparation...
-
-
-# Prepare training data
+# Scale features
 scaler = MinMaxScaler(feature_range=(0, 1))
-scaled_data = scaler.fit_transform(data[['Close', 'RSI', 'Lower_Band', 'Upper_Band', 'Daily_Log_Return']].values)
-joblib.dump(scaler, "models/scaler.pkl")  # Save scaler for later use
+scaled_data = scaler.fit_transform(
+    data[['Close', 'RSI', 'Lower_Band', 'Upper_Band', 'Daily_Log_Return']].values
+)
+joblib.dump(scaler, "models/scaler.pkl")  # Save the scaler
 
+# Create dataset with time-window
 look_back = 60
-X_train, y_train = create_dataset(scaled_data, look_back)
+X, y = create_dataset(scaled_data, look_back)
 
-# Reshape data for LSTM
-X_train = np.reshape(X_train, (X_train.shape[0], X_train.shape[1], X_train.shape[2]))
+# ---------------- SPLIT into Train & Test Sets ----------------
+# For time series, we typically take the last part for testing:
+train_size = int(len(X) * 0.8)
+X_train, X_test = X[:train_size], X[train_size:]
+y_train, y_test = y[:train_size], y[train_size:]
 
-# Hyperparameter optimization
+# Reshape for Keras (batch_size, timesteps, features)
+X_train = X_train.reshape((X_train.shape[0], X_train.shape[1], X_train.shape[2]))
+X_test = X_test.reshape((X_test.shape[0], X_test.shape[1], X_test.shape[2]))
+
+# Define hyperparameter grid
 param_grid = {
-    'rnn_units': [50, 100],
-    'lstm_units': [50, 100],
-    'dropout_rate': [0.2, 0.3],
-    'learning_rate': [0.001, 0.0005],
-    'batch_size': [32, 64],
-    'epochs': [50, 100]
+    'rnn_units': [50],
+    'lstm_units': [50],
+    'dropout_rate': [0.2],
+    'learning_rate': [0.001],
+    'batch_size': [32],
+    'epochs': [50]
 }
 
 best_model = None
 best_score = float('inf')
+best_param_str = None  # We'll store the best model's param string here
+
+# Hyperparameter optimization
+from sklearn.model_selection import ParameterGrid
 
 for params in ParameterGrid(param_grid):
     model, history = build_and_train_hybrid_model(params, X_train, y_train)
 
-    # Create a separate folder for each parameter combination
-    param_str = f"units{params['lstm_units']}_dropout{params['dropout_rate']}_lr{params['learning_rate']}_batch{params['batch_size']}_epochs{params['epochs']}"
+    # Evaluate final epoch's validation loss
+    val_loss = history.history['val_loss'][-1]
+
+    # Evaluate on test set for more robust comparison
+    test_loss, test_mae, test_mape = model.evaluate(X_test, y_test, verbose=0)
+
+    # Predict on test for additional stats
+    test_preds = model.predict(X_test)
+    test_preds_unscaled = scaler.inverse_transform(
+        np.hstack((test_preds, np.zeros((test_preds.shape[0], 4))))
+    )
+    y_test_unscaled = scaler.inverse_transform(
+        np.hstack((y_test.reshape(-1, 1), np.zeros((y_test.shape[0], 4))))
+    )
+
+    # Additional metrics
+    test_mse = mean_squared_error(y_test_unscaled[:, 0], test_preds_unscaled[:, 0])
+    test_rmse = np.sqrt(test_mse)
+    test_r2 = r2_score(y_test_unscaled[:, 0], test_preds_unscaled[:, 0])
+
+    # Create folders for the current param combination
+    param_str = (
+        f"units{params['lstm_units']}_dropout{params['dropout_rate']}"
+        f"_lr{params['learning_rate']}_batch{params['batch_size']}_epochs{params['epochs']}"
+    )
     model_folder = f"models/{param_str}"
     plot_folder = f"plots/{param_str}"
     os.makedirs(model_folder, exist_ok=True)
@@ -164,7 +212,7 @@ for params in ParameterGrid(param_grid):
     # Save the model
     model.save(f"{model_folder}/model.keras")
 
-    # Plot and save training/validation loss
+    # Plot training & validation loss
     plt.figure(figsize=(14, 7))
     plt.plot(history.history['loss'], label='Training Loss', color='blue')
     plt.plot(history.history['val_loss'], label='Validation Loss', color='orange')
@@ -175,42 +223,41 @@ for params in ParameterGrid(param_grid):
     plt.savefig(f"{plot_folder}/loss.png")
     plt.close()
 
-    # Evaluate on training data (as proxy for now)
-    train_loss = history.history['val_loss'][-1]
-
-    # Predict on training data for visualization
-    predictions = model.predict(X_train)
-    predicted_prices = scaler.inverse_transform(np.hstack((predictions, np.zeros((predictions.shape[0], 4)))))
-    true_prices = scaler.inverse_transform(np.hstack((y_train.reshape(-1, 1), np.zeros((y_train.shape[0], 4)))))
-
-    # Save prediction plot
+    # Plot predictions vs. true (on the test set)
     plt.figure(figsize=(14, 7))
-    plt.plot(true_prices[:, 0], label="True Prices", color="blue")
-    plt.plot(predicted_prices[:, 0], label="Predicted Prices", color="red")
-    plt.title(f"Predictions vs True Prices for {param_str}")
-    plt.xlabel("Time Steps")
+    plt.plot(y_test_unscaled[:, 0], label="True Test Prices", color="blue")
+    plt.plot(test_preds_unscaled[:, 0], label="Predicted Test Prices", color="red")
+    plt.title(f"Test Predictions vs True Prices for {param_str}")
+    plt.xlabel("Time Steps (Test Set)")
     plt.ylabel("Stock Price")
     plt.legend()
-    plt.savefig(f"{plot_folder}/predictions.png")
+    plt.savefig(f"{plot_folder}/test_predictions.png")
     plt.close()
 
-    # Save statistics (e.g., loss, RMSE, R2) to a log file
-    mse = mean_squared_error(true_prices[:, 0], predicted_prices[:, 0])
-    rmse = np.sqrt(mse)
-    r2 = r2_score(true_prices[:, 0], predicted_prices[:, 0])
-
+    # Write stats to file
     with open(f"{model_folder}/stats.txt", "w") as stats_file:
-        stats_file.write(f"MSE: {mse}\n")
-        stats_file.write(f"RMSE: {rmse}\n")
-        stats_file.write(f"R2 Score: {r2}\n")
-        stats_file.write(f"Validation Loss: {train_loss}\n")
+        stats_file.write(f"Validation Loss: {val_loss}\n")
+        stats_file.write(f"Test Loss (MSE): {test_loss}\n")
+        stats_file.write(f"Test MAE: {test_mae}\n")
+        stats_file.write(f"Test MAPE: {test_mape}\n")
+        stats_file.write(f"Test MSE: {test_mse}\n")
+        stats_file.write(f"Test RMSE: {test_rmse}\n")
+        stats_file.write(f"Test R2 Score: {test_r2}\n")
 
-    if train_loss < best_score:
+    log_and_print(
+        f"Params: {param_str} | "
+        f"Val Loss: {val_loss:.5f} | "
+        f"Test RMSE: {test_rmse:.5f} | Test R2: {test_r2:.5f}"
+    )
+
+    # Update best model based on val_loss (you might choose test_loss instead)
+    if val_loss < best_score:
+        best_score = val_loss
         best_model = model
-        best_score = train_loss
+        best_param_str = param_str
 
-log_and_print(f"Best model parameters: {best_model.get_config()}")
-log_and_print(f"Best score: {best_score}")
+# Finally, log a short name rather than printing the entire config
+log_and_print(f"Best model name: {best_param_str}")
+log_and_print(f"Best score (Val Loss): {best_score}")
 
-
-#todo: add preprocessing, such as removing outliers
+# todo: add preprocessing, such as removing outliers
