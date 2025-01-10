@@ -342,7 +342,7 @@ if __name__ == "__main__":
     # Fetch data
     ticker = "^GSPC"
     start_date = "2020-01-01"
-    end_date = "2025-01-04"
+    end_date = "2025-01-09"
     data = fetch_data(ticker, start_date, end_date)
 
     if data.empty:

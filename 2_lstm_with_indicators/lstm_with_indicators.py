@@ -70,8 +70,6 @@ def add_technical_indicators(data):
     # Added MACD as a new technical indicator
     macd = ta.trend.MACD(close_prices)
     data['MACD'] = macd.macd()
-    data['MACD_Signal'] = macd.macd_signal()
-    data['MACD_Diff'] = macd.macd_diff()
 
     log_and_print("Technical indicators added successfully.")
     return data
@@ -347,7 +345,7 @@ if __name__ == "__main__":
     # Fetch data
     ticker = "^GSPC"
     start_date = "2020-01-01"
-    end_date = "2025-01-04"
+    end_date = "2025-01-09"
     data = fetch_data(ticker, start_date, end_date)
 
     if data.empty:
@@ -391,11 +389,11 @@ if __name__ == "__main__":
     scaler = MinMaxScaler(feature_range=(0, 1))
     scaled_train = scaler.fit_transform(
         train_data[
-            ['Close', 'RSI', 'Lower_Band', 'Upper_Band', 'Daily_Log_Return', 'MACD', 'MACD_Signal', 'MACD_Diff']].values
+            ['Close', 'RSI', 'Lower_Band', 'Upper_Band', 'Daily_Log_Return', 'MACD']].values
     )
     scaled_test = scaler.transform(
         test_data[
-            ['Close', 'RSI', 'Lower_Band', 'Upper_Band', 'Daily_Log_Return', 'MACD', 'MACD_Signal', 'MACD_Diff']].values
+            ['Close', 'RSI', 'Lower_Band', 'Upper_Band', 'Daily_Log_Return', 'MACD']].values
     )
 
     joblib.dump(scaler, "models/scaler.pkl")  # Save the scaler
@@ -407,7 +405,6 @@ if __name__ == "__main__":
     # Reshape for Keras (batch_size, timesteps, features)
     X_train = X_train.reshape((X_train.shape[0], X_train.shape[1], X_train.shape[2]))
     X_test = X_test.reshape((X_test.shape[0], X_test.shape[1], X_test.shape[2]))
-
 
     # ------------------- OPTUNA HYPERPARAMETER OPTIMIZATION -------------------
 
