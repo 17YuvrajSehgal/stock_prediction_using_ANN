@@ -12,8 +12,10 @@ import yfinance as yf
 from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
 from sklearn.preprocessing import MinMaxScaler
 from tensorflow.keras import Sequential
+from tensorflow.keras.callbacks import EarlyStopping  # Added for Early Stopping
 from tensorflow.keras.layers import Input, LSTM, Dense, Dropout, Bidirectional, SimpleRNN
 from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.regularizers import l2  # Added for L2 regularization
 
 # 1) Suppress TensorFlow info messages (still show warnings/errors).
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
@@ -85,11 +87,15 @@ def build_and_train_hybrid_model(params, X_train, y_train):
     # Add additional metrics in compile to track them during training
     model = Sequential([
         Input(shape=(X_train.shape[1], X_train.shape[2])),
-        SimpleRNN(units=params['rnn_units'], return_sequences=True),
+        # Added L2 regularization to SimpleRNN layer
+        SimpleRNN(units=params['rnn_units'], return_sequences=True,
+                  kernel_regularizer=l2(params['l2_reg'])),
         Dropout(params['dropout_rate']),
-        Bidirectional(LSTM(units=params['lstm_units'], return_sequences=False)),
+        # Added L2 regularization to LSTM layer
+        Bidirectional(LSTM(units=params['lstm_units'], return_sequences=False,
+                           kernel_regularizer=l2(params['l2_reg']))),
         Dropout(params['dropout_rate']),
-        Dense(units=25, activation='relu'),
+        Dense(units=25, activation='relu', kernel_regularizer=l2(params['l2_reg'])),
         Dense(units=1)
     ])
 
@@ -100,13 +106,22 @@ def build_and_train_hybrid_model(params, X_train, y_train):
         metrics=['mae', 'mape']
     )
 
-    # Train with validation split
+    # Added EarlyStopping callback to prevent overfitting
+    early_stopping = EarlyStopping(
+        monitor='val_loss',
+        patience=10,
+        restore_best_weights=True,
+        verbose=1
+    )
+
+    # Train with validation split and EarlyStopping
     history = model.fit(
         X_train, y_train,
         epochs=params['epochs'],
         batch_size=params['batch_size'],
         validation_split=0.2,
-        verbose=0
+        verbose=0,
+        callbacks=[early_stopping]  # Added callbacks parameter
     )
 
     return model, history
@@ -120,7 +135,7 @@ def simulate_investments(
         scaler,
         look_back=60,
         initial_capital=1_000_000,
-        transaction_amount=10_000
+        transaction_amount=50_000
 ):
     """
     Simulate a simple trading strategy using the trained model predictions:
@@ -338,6 +353,7 @@ if __name__ == "__main__":
         learning_rate = trial.suggest_float("learning_rate", 1e-5, 1e-2, log=True)
         batch_size = trial.suggest_categorical("batch_size", [16, 32, 64])
         epochs = trial.suggest_int("epochs", 10, 100, step=10)
+        l2_reg = trial.suggest_float("l2_reg", 1e-5, 1e-2, log=True)  # Added L2 regularization hyperparameter
 
         # Build and train the model
         params = {
@@ -347,6 +363,7 @@ if __name__ == "__main__":
             "learning_rate": learning_rate,
             "batch_size": batch_size,
             "epochs": epochs,
+            "l2_reg": l2_reg,  # Added to params
         }
         model, history = build_and_train_hybrid_model(params, X_train, y_train)
 
@@ -357,6 +374,7 @@ if __name__ == "__main__":
         param_str = (
             f"units{params['lstm_units']}_dropout{params['dropout_rate']}"
             f"_lr{params['learning_rate']}_batch{params['batch_size']}_epochs{params['epochs']}"
+            f"_l2{params['l2_reg']}"
         )
         model_folder = f"models/{param_str}"
         plot_folder = f"plots/{param_str}"
@@ -405,7 +423,7 @@ if __name__ == "__main__":
             scaler=scaler,
             look_back=look_back,
             initial_capital=1_000_000,
-            transaction_amount=10_000
+            transaction_amount=50_000
         )
 
         # Plot Portfolio Values Over Time
@@ -463,6 +481,7 @@ if __name__ == "__main__":
     best_param_str = (
         f"units{best_params['lstm_units']}_dropout{best_params['dropout_rate']}"
         f"_lr{best_params['learning_rate']}_batch{best_params['batch_size']}_epochs{best_params['epochs']}"
+        f"_l2{best_params['l2_reg']}"
     )
     best_model_folder = f"models/{best_param_str}"
     plot_folder = f"plots/{best_param_str}"
@@ -523,7 +542,7 @@ if __name__ == "__main__":
         scaler=scaler,
         look_back=look_back,
         initial_capital=1_000_000,
-        transaction_amount=10_000
+        transaction_amount=50_000
     )
 
     # Plot Portfolio Values Over Time for the Best Model
