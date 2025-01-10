@@ -1,0 +1,9 @@
+Validation Loss: 0.0013712324434891343
+Test MSE: 6096.585775728497
+Test RMSE: 78.08063636861893
+Test MAE: 65.77270815351872
+Test R2 Score: 0.9533243098141458
+Final Portfolio Value: $1155557.62
+Total Profit/Loss: $155557.62
+Sharpe Ratio: 1.6547
+Max Drawdown: -0.0756
