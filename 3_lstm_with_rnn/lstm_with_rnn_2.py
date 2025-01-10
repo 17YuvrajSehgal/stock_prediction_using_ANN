@@ -116,7 +116,7 @@ def build_and_train_hybrid_model(params, X_train, y_train):
         monitor='val_loss',
         patience=10,
         restore_best_weights=True,
-        verbose=1
+        verbose=2
     )
 
     # Train with validation split and EarlyStopping
@@ -125,7 +125,7 @@ def build_and_train_hybrid_model(params, X_train, y_train):
         epochs=params['epochs'],
         batch_size=params['batch_size'],
         validation_split=0.2,
-        verbose=0,
+        verbose=2,
         callbacks=[early_stopping]  # Added callbacks parameter
     )
 
