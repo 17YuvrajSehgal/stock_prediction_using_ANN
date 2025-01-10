@@ -72,7 +72,7 @@ def add_technical_indicators(data):
 
 
 # Prepare time-series data
-def create_dataset(dataset, look_back=60):
+def create_dataset(dataset, look_back=10):
     """
     dataset: (num_samples, num_features) after scaling
     look_back: how many timesteps to include in each sample
@@ -138,7 +138,7 @@ def simulate_investments(
         y_test,
         data,
         scaler,
-        look_back=60,
+        look_back=10,
         initial_capital=1_000_000,
         transaction_amount=50_000
 ):
@@ -382,7 +382,7 @@ if __name__ == "__main__":
     joblib.dump(scaler, "models/scaler.pkl")  # Save the scaler
 
     # Create dataset with time-window
-    look_back = 60
+    look_back = 10
     X, y = create_dataset(scaled_data, look_back)
 
     # ---------------- SPLIT into Train & Test Sets ----------------
@@ -400,11 +400,11 @@ if __name__ == "__main__":
     def objective(trial):
         # Suggest hyperparameters for this trial
         rnn_units = trial.suggest_int("rnn_units", 10, 100, step=10)
-        lstm_units = trial.suggest_int("lstm_units", 10, 100, step=10)
+        lstm_units = trial.suggest_int("lstm_units", 50, 200, step=50)
         dropout_rate = trial.suggest_float("dropout_rate", 0.1, 0.5, step=0.1)
         learning_rate = trial.suggest_float("learning_rate", 1e-5, 1e-2, log=True)
         batch_size = trial.suggest_categorical("batch_size", [16, 32, 64])
-        epochs = trial.suggest_int("epochs", 10, 100, step=10)
+        epochs = trial.suggest_int("epochs", 50, 200, step=50)
         l2_reg = trial.suggest_float("l2_reg", 1e-5, 1e-2, log=True)  # Added L2 regularization hyperparameter
 
         # Build and train the model
