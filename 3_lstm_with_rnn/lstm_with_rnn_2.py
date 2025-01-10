@@ -62,6 +62,11 @@ def add_technical_indicators(data):
     data['Lower_Band'] = bol.bollinger_lband()
     data['Upper_Band'] = bol.bollinger_hband()
     data['Daily_Log_Return'] = ta.others.DailyLogReturnIndicator(close_prices).daily_log_return()
+
+    # Added MACD as a new technical indicator
+    macd = ta.trend.MACD(close_prices)
+    data['MACD'] = macd.macd()
+
     log_and_print("Technical indicators added successfully.")
     return data
 
@@ -159,15 +164,15 @@ def simulate_investments(
     scaled_preds = model.predict(X_test)
 
     # 2) Unscale predictions and actuals
-    predictions_unscaled = scaler.inverse_transform(
-        np.hstack((scaled_preds, np.zeros(
-            (scaled_preds.shape[0], data[['RSI', 'Lower_Band', 'Upper_Band', 'Daily_Log_Return']].shape[1]))))
-    )[:, 0]
+    # Adjusted to include the new 'MACD' feature by adding an additional zero column
+    # Now, we have 6 features: ['Close', 'RSI', 'Lower_Band', 'Upper_Band', 'Daily_Log_Return', 'MACD']
+    num_features = scaler.scale_.shape[0]
+    scaled_preds_extended = np.hstack((scaled_preds, np.zeros((scaled_preds.shape[0], num_features - 1))))
+    predictions_unscaled = scaler.inverse_transform(scaled_preds_extended)[:, 0]
 
-    y_test_unscaled = scaler.inverse_transform(
-        np.hstack((y_test.reshape(-1, 1),
-                   np.zeros((y_test.shape[0], data[['RSI', 'Lower_Band', 'Upper_Band', 'Daily_Log_Return']].shape[1]))))
-    )[:, 0]
+    # Similarly adjust y_test
+    y_test_extended = np.hstack((y_test.reshape(-1, 1), np.zeros((y_test.shape[0], num_features - 1))))
+    y_test_unscaled = scaler.inverse_transform(y_test_extended)[:, 0]
 
     # 3) Identify the corresponding date indices for X_test
     test_start_idx = len(data) - len(X_test)
@@ -324,8 +329,9 @@ if __name__ == "__main__":
 
     # Scale features
     scaler = MinMaxScaler(feature_range=(0, 1))
+    # Updated to include 'MACD' in the scaling
     scaled_data = scaler.fit_transform(
-        data[['Close', 'RSI', 'Lower_Band', 'Upper_Band', 'Daily_Log_Return']].values
+        data[['Close', 'RSI', 'Lower_Band', 'Upper_Band', 'Daily_Log_Return', 'MACD']].values
     )
     joblib.dump(scaler, "models/scaler.pkl")  # Save the scaler
 
@@ -397,12 +403,13 @@ if __name__ == "__main__":
 
         # Predictions vs. True Values on Test Set
         predictions = model.predict(X_test)
-        predictions_unscaled = scaler.inverse_transform(
-            np.hstack((predictions, np.zeros((predictions.shape[0], scaled_data.shape[1] - 1))))
-        )[:, 0]
-        y_test_unscaled_val = scaler.inverse_transform(
-            np.hstack((y_test.reshape(-1, 1), np.zeros((y_test.shape[0], scaled_data.shape[1] - 1))))
-        )[:, 0]
+        # Adjusted to include 'MACD' by adding a zero column
+        scaled_predictions_extended = np.hstack(
+            (predictions, np.zeros((predictions.shape[0], scaled_data.shape[1] - 1))))
+        predictions_unscaled = scaler.inverse_transform(scaled_predictions_extended)[:, 0]
+        # Similarly adjust y_test
+        y_test_extended_val = np.hstack((y_test.reshape(-1, 1), np.zeros((y_test.shape[0], scaled_data.shape[1] - 1))))
+        y_test_unscaled_val = scaler.inverse_transform(y_test_extended_val)[:, 0]
 
         plt.figure(figsize=(14, 7))
         plt.plot(y_test_unscaled_val, label="True Prices", color="blue")
@@ -505,15 +512,15 @@ if __name__ == "__main__":
 
     # Test set predictions for visualization
     predictions = best_model.predict(X_test)
-    predictions_unscaled = scaler.inverse_transform(
-        np.hstack((predictions, np.zeros((predictions.shape[0], scaled_data.shape[1] - 1))))
-    )[:, 0]
-    y_test_unscaled = scaler.inverse_transform(
-        np.hstack((y_test.reshape(-1, 1), np.zeros((y_test.shape[0], scaled_data.shape[1] - 1))))
-    )[:, 0]
+    # Adjusted to include 'MACD' by adding a zero column
+    scaled_predictions_extended = np.hstack((predictions, np.zeros((predictions.shape[0], scaled_data.shape[1] - 1))))
+    predictions_unscaled = scaler.inverse_transform(scaled_predictions_extended)[:, 0]
+    # Similarly adjust y_test
+    y_test_extended_final = np.hstack((y_test.reshape(-1, 1), np.zeros((y_test.shape[0], scaled_data.shape[1] - 1))))
+    y_test_unscaled_final = scaler.inverse_transform(y_test_extended_final)[:, 0]
 
     plt.figure(figsize=(14, 7))
-    plt.plot(y_test_unscaled, label="True Prices", color="blue")
+    plt.plot(y_test_unscaled_final, label="True Prices", color="blue")
     plt.plot(predictions_unscaled, label="Predicted Prices", color="red")
     plt.title("Predictions vs True Prices (Best Hyperparameters)")
     plt.xlabel("Time Steps")
@@ -523,10 +530,10 @@ if __name__ == "__main__":
     plt.close()
 
     # Evaluate model performance on test set
-    test_mse = mean_squared_error(y_test_unscaled, predictions_unscaled)
+    test_mse = mean_squared_error(y_test_unscaled_final, predictions_unscaled)
     test_rmse = np.sqrt(test_mse)
-    test_mae = mean_absolute_error(y_test_unscaled, predictions_unscaled)
-    test_r2 = r2_score(y_test_unscaled, predictions_unscaled)
+    test_mae = mean_absolute_error(y_test_unscaled_final, predictions_unscaled)
+    test_r2 = r2_score(y_test_unscaled_final, predictions_unscaled)
 
     log_and_print(f"Best Model Test MSE: {test_mse}")
     log_and_print(f"Best Model Test RMSE: {test_rmse}")
