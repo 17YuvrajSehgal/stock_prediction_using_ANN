@@ -286,8 +286,54 @@ def simulate_investments(
                   f"  Final Portfolio Value: ${final_portfolio_value:.2f}\n"
                   f"  Total Profit/Loss: ${profit_loss:.2f}")
 
+    # Convert portfolio_values and trade_dates to pandas Series for easier computation
+    portfolio_series = pd.Series(portfolio_values, index=trade_dates)
+
+    # Calculate daily returns
+    daily_returns = portfolio_series.pct_change().dropna()
+
+    # Calculate Sharpe Ratio (Assuming 252 trading days in a year)
+    sharpe_ratio = (daily_returns.mean() / daily_returns.std()) * np.sqrt(252) if daily_returns.std() != 0 else 0.0
+
+    # Calculate Max Drawdown
+    cumulative_max = portfolio_series.cummax()
+    drawdowns = (portfolio_series - cumulative_max) / cumulative_max
+    max_drawdown = drawdowns.min()
+
+    log_and_print(f"Sharpe Ratio: {sharpe_ratio:.4f}")
+    log_and_print(f"Max Drawdown: {max_drawdown:.4f}")
+
+    # Plot Equity Curve and Drawdown
+    plt.figure(figsize=(14, 7))
+    plt.plot(portfolio_series.index, portfolio_series.values, label='Portfolio Value', color='green')
+    plt.title("Equity Curve")
+    plt.xlabel("Date")
+    plt.ylabel("Portfolio Value ($)")
+    plt.legend()
+    plt.savefig("plots/equity_curve.png")
+    plt.close()
+
+    plt.figure(figsize=(14, 7))
+    plt.plot(drawdowns.index, drawdowns.values, label='Drawdown', color='red')
+    plt.title("Drawdown Over Time")
+    plt.xlabel("Date")
+    plt.ylabel("Drawdown")
+    plt.legend()
+    plt.savefig("plots/drawdown.png")
+    plt.close()
+
+    # After loop ends, log final state with new metrics
+    log_and_print(f"Final Simulation Results with Enhanced Metrics:\n"
+                  f"  Final Cash: ${cash:.2f}\n"
+                  f"  Final Shares Held: {shares_held:.4f}\n"
+                  f"  Final Stock Price: ${y_test_unscaled[-1]:.2f}\n"
+                  f"  Final Portfolio Value: ${final_portfolio_value:.2f}\n"
+                  f"  Total Profit/Loss: ${profit_loss:.2f}\n"
+                  f"  Sharpe Ratio: {sharpe_ratio:.4f}\n"
+                  f"  Max Drawdown: {max_drawdown:.4f}")
+
     # Return details for further analysis if desired
-    return portfolio_values, trade_dates, final_portfolio_value, profit_loss
+    return portfolio_values, trade_dates, final_portfolio_value, profit_loss, sharpe_ratio, max_drawdown
 
 
 # ===================== MAIN SCRIPT STARTS HERE =====================
@@ -422,7 +468,7 @@ if __name__ == "__main__":
         plt.close()
 
         # ------------------- SIMULATE INVESTMENTS FOR THIS TRIAL -------------------
-        portfolio_values, trade_dates, final_portfolio_value, profit_loss = simulate_investments(
+        portfolio_values, trade_dates, final_portfolio_value, profit_loss, sharpe_ratio, max_drawdown = simulate_investments(
             model=model,
             X_test=X_test,
             y_test=y_test,
@@ -456,6 +502,8 @@ if __name__ == "__main__":
             stats_file.write(f"Test R2 Score: {test_r2}\n")
             stats_file.write(f"Final Portfolio Value: ${final_portfolio_value:.2f}\n")
             stats_file.write(f"Total Profit/Loss: ${profit_loss:.2f}\n")
+            stats_file.write(f"Sharpe Ratio: {sharpe_ratio:.4f}\n")
+            stats_file.write(f"Max Drawdown: {max_drawdown:.4f}\n")
 
         # Report the validation loss to Optuna
         trial.report(val_loss, step=epochs)
@@ -541,7 +589,7 @@ if __name__ == "__main__":
     log_and_print(f"Best Model Test R2: {test_r2}")
 
     # ------------------- SIMULATE INVESTMENTS FOR THE BEST MODEL -------------------
-    portfolio_values, trade_dates, final_value, profit_loss = simulate_investments(
+    portfolio_values, trade_dates, final_value, profit_loss, sharpe_ratio, max_drawdown = simulate_investments(
         model=best_model,
         X_test=X_test,
         y_test=y_test,
@@ -562,9 +610,38 @@ if __name__ == "__main__":
     plt.savefig(f"{plot_folder}/best_model_portfolio_values.png")
     plt.close()
 
-    # Log final profit/loss
+    # Plot Equity Curve and Drawdown for the Best Model
+    portfolio_series_best = pd.Series(portfolio_values, index=trade_dates)
+    daily_returns_best = portfolio_series_best.pct_change().dropna()
+    sharpe_ratio_best = (daily_returns_best.mean() / daily_returns_best.std()) * np.sqrt(
+        252) if daily_returns_best.std() != 0 else 0.0
+    cumulative_max_best = portfolio_series_best.cummax()
+    drawdowns_best = (portfolio_series_best - cumulative_max_best) / cumulative_max_best
+    max_drawdown_best = drawdowns_best.min()
+
+    plt.figure(figsize=(14, 7))
+    plt.plot(portfolio_series_best.index, portfolio_series_best.values, label='Portfolio Value', color='green')
+    plt.title("Equity Curve (Best Hyperparameters)")
+    plt.xlabel("Date")
+    plt.ylabel("Portfolio Value ($)")
+    plt.legend()
+    plt.savefig(f"{plot_folder}/best_model_equity_curve.png")
+    plt.close()
+
+    plt.figure(figsize=(14, 7))
+    plt.plot(drawdowns_best.index, drawdowns_best.values, label='Drawdown', color='red')
+    plt.title("Drawdown Over Time (Best Hyperparameters)")
+    plt.xlabel("Date")
+    plt.ylabel("Drawdown")
+    plt.legend()
+    plt.savefig(f"{plot_folder}/best_model_drawdown.png")
+    plt.close()
+
+    # Log final profit/loss and enhanced metrics
     log_and_print(f"Final Portfolio Value: ${final_value:.2f}")
     log_and_print(f"Total Profit/Loss: ${profit_loss:.2f}")
+    log_and_print(f"Sharpe Ratio: {sharpe_ratio:.4f}")
+    log_and_print(f"Max Drawdown: {max_drawdown:.4f}")
 
     # Save the best model again (redundant but ensures it's saved after all operations)
     best_model.save(f"{best_model_folder}/best_model.keras")
